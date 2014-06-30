@@ -2,6 +2,7 @@ var cluster = require("cluster");
 var events = require("events");
 var phantom = require("phantom");
 var os = require("os");
+var Heap = require('heap');
 
 var Master = function (options) {
     events.EventEmitter.call(this);
@@ -14,7 +15,9 @@ var Master = function (options) {
     
     this.itemTimeout = options && options.pageDeath || 120000;
     this.itemClicker = 0;
-    this.itemQueue = [];
+    this.itemQueue = new Heap(function(a, b){
+        return a.priority - b.priority
+    });
     this.items = {};
     
     cluster.on("exit", this.onExit.bind(this));
@@ -91,7 +94,8 @@ Master.prototype.queue = function (data, next) {
         id: this.itemClicker++,
         timeout: -1,
         data: data,
-        done: next
+        done: next,
+        priority: data.priority || 10
     };
     
     this.itemQueue.push(item);
@@ -99,14 +103,14 @@ Master.prototype.queue = function (data, next) {
 };
 
 Master.prototype.process = function () {
-    while (this.workerQueue.length && this.itemQueue.length) {
+    while (this.workerQueue.length && this.itemQueue.size()) {
         var worker = this.workerQueue.shift();
         
         if (!worker.process.connected) {
             continue;
         }
         
-        var item = this.itemQueue.shift();
+        var item = this.itemQueue.pop();
         
         item.worker = worker;
         item.timeout = setTimeout(this.onTimeout.bind(this, item), this.itemTimeout);
